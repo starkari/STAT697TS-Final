@@ -6,11 +6,13 @@ library(tidyverse)
 library(readr)
 library(forecast)
 library(R.utils)
+library(MARSS)
 
 load("Data/data.Rdata")
 load("Data/data.90.percent.Rdata")
 load("Data/missing_data.Rdata")
 load("Data/k.step.arima.selection.Rdata")
+load("Data/fit.covy.Rdata")
 
 ## ------------ data overview
 y.full <- data$TOBS
@@ -51,14 +53,6 @@ arima.fit.coef <- arima.fit$coef
 
 ## ---------------------- model prediction ARIMA
 
-# predict(arima(y.90, order = c(4, 0, 2), xreg = xreg.90,
-#               method = "ML", fixed = arima.fit.coef),
-#         n.ahead = (n.full-n.90), 
-#         newxreg = model.matrix(~sin(2*pi*omega) +
-#                                  cos(2*pi*omega)
-#                                ,data=data[indices.to.predict,]))
-# 
-# indices.to.predict <- (n.90+1):(n.full)
 
 # compare 30 day predictions and 1 day predictions for last 10% of data
 y.full <- data$TOBS
@@ -139,9 +133,37 @@ for (i in 1:length(indices.to.predict.from)) {
 }
 
 
-### ---------------- model fiting State Space
+# predict entire 10%
+predict.last.10.percent <- predict(arima(y.90, order = c(4, 0, 2), xreg = xreg.90,
+                                         method = "ML", fixed = arima.fit.coef,
+                                         include.mean = FALSE),
+                                   n.ahead = n.full-n.90, 
+                                   newxreg = model.matrix(~sin(2*pi*omega) +
+                                                            cos(2*pi*omega)
+                                                          ,data=data[n.full-n.90,]))
+### MSE last 10%
+mean(as.vector((predict.last.10.percent$pred-y.full[n.full-n.90])^2))
+
+#### MAE last 10%
+mean(as.vector(abs(predict.last.10.percent$pred-y.full[n.full-n.90])))
+
+### ---------------- State Space
 
 
+forc.covy <- fit.covy$ytT
+forc.covy.se <- fit.covy$ytT.se
+
+plot(data$DATE, data$TOBS, type = "l",
+     xlab = "Date", ylab = "Temp",
+     col = "gray", ylim = c(-10, 100))
+lines(data$DATE[(n.90+1):n.full], forc.covy[(n.90+1):n.full], col = "blue")
+
+
+### MSE last 10%
+mean(as.vector((forc.covy-y.full[n.full-n.90])^2))
+
+#### MAE last 10%
+mean(as.vector(abs(forc.covy-y.full[n.full-n.90])))
 
 
 
