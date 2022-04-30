@@ -12,7 +12,8 @@ load("Data/data.Rdata")
 load("Data/data.90.percent.Rdata")
 load("Data/missing_data.Rdata")
 load("Data/k.step.arima.selection.Rdata")
-load("Data/fit.covy.Rdata")
+load("Data/fit.state.ful.Rdata")
+load("Data/State_Space_AIC_Fit90.Rdata")
 
 ## ------------ data overview
 y.full <- data$TOBS
@@ -26,6 +27,21 @@ data.plot <- data %>%
 
 # max date in 90%
 max(data.90.percent$DATE)
+
+# acf
+acf.data <- acf(y.full,lag.max = length(y.full)-1,plot = FALSE)
+
+acf.data.plot <- ggplot(mapping=aes(x=acf.data$lag)) +
+  geom_segment(aes(y=acf.data$acf),yend=0,xend=acf.data$lag) +
+  geom_hline(yintercept= qnorm(.975)/sqrt(acf.data$n.used),color="blue",
+             linetype="dashed") +
+  geom_hline(yintercept= qnorm(.025)/sqrt(acf.data$n.used),color="blue",
+             linetype="dashed")+
+  xlab("Lag")+
+  ylab("ACF")
+  
+  
+  
 
 ## ______________ what ARIMA model
 
