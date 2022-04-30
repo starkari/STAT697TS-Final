@@ -1,0 +1,179 @@
+---
+title: "Weather Data"
+author: "Ariane Stark"
+date: "4/15/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readr)
+library(forecast)
+library(R.utils)
+library(doParallel)
+```
+
+# Data Loading
+
+Data of weather from the Amherst Massachusetts weather station from [](https://www.ncdc.noaa.gov/cdo-web/search?datasetid=GHCND)
+
+
+from [](https://www.ncdc.noaa.gov/cdo-web/datasets/GHCND/stations/GHCND:USC00190120/detail)
+
+use of Nimbus Temperature software began 2008-10-21
+
+TOBS is time at observation which is 0730 
+
+```{r}
+
+dat_full <- read_csv("weather_data.csv")
+
+mising_data <- dat_full %>% 
+  filter(is.na(TMAX) | is.na(TMIN) | is.na(TOBS))
+
+```
+
+```{r}
+dat_full %>% 
+  filter(DATE>=as.Date.character("2008-01-01")) %>% 
+  filter(DATE<=as.Date.character("2010-12-31")) %>% 
+  ggplot(aes(x=DATE, y= TOBS))+
+  geom_line()
+```
+
+```{r}
+data <- dat_full %>% 
+  filter(DATE>=as.Date.character("2010-01-01"))
+
+y <- data$TOBS
+```
+
+```{r}
+data %>% 
+  ggplot(aes(x=DATE, y= TOBS))+
+  geom_line()
+```
+
+One year close inspection
+
+```{r}
+data %>% 
+  filter(DATE>=as.Date.character("2021-01-01")) %>% 
+  filter(DATE<=as.Date.character("2021-12-31")) %>% 
+  ggplot(aes(x=DATE, y= TOBS))+
+  geom_line()
+```
+
+
+# Analysis
+
+## Potential Ideas
+
+- weekly aggregates
+
+## Work
+
+```{r}
+lm.fit <- lm(TOBS ~ DATE, data = data)
+
+summary(lm.fit)
+
+```
+
+
+```{r}
+data %>% 
+  ggplot(aes(x=DATE, y= TOBS))+
+  geom_line() +
+  geom_line(aes(y=lm.fit$fitted.values,color="Linear Fit")) +
+  geom_line(aes(y=mean(y),color="Data Mean"))
+
+
+```
+
+## Differencing Tests
+```{r}
+# level tests
+
+ndiffs(y, alpha = 0.05, test = "adf", type = "level")
+ndiffs(y, alpha = 0.05, test = "pp", type = "level")
+
+
+# trend tests
+
+ndiffs(y, alpha = 0.05, test = "adf", type = "trend")
+ndiffs(y, alpha = 0.05, test = "pp", type = "trend")
+```
+
+
+
+
+
+## ARIMA Model Selection
+
+```{r}
+ar(y, aic=TRUE, demean=TRUE)
+
+```
+
+
+```{r eval=FALSE}
+aic.data <- matrix(NA,nrow = 22, ncol=5)
+rownames(aic.data) <- paste0("p=",1:22)
+colnames(aic.data) <- paste0("q=",1:5)
+
+do_par_arima <- function(p,q) {
+  
+  
+  fit <- tryCatch(withTimeout(arima(y, c(p, 0, q), method = "ML"), 
+                       timeout = 60, elapsed = 60, 
+                       onTimeout = "silent"),
+                    error = function(e){
+                      return(NULL)
+                    })
+    
+    aic <- ifelse(is.null(fit), NA, 
+                  ifelse(fit$code != 0, NA, 
+                         fit$aic))
+
+  
+  return(list("p"= p,
+              "q" = q,
+              "aic" = aic))
+  
+}
+
+
+no_cores <- detectCores() - 1  
+cl <- makeCluster(no_cores, type="FORK")  
+registerDoParallel(cl)
+
+
+results.aic <- foreach(p=rep(1:22, each=5), 
+                     q=rep(1:5, times=22), .combine = 'cbind') %dopar% {
+  do_par_arima(p,q)
+}
+
+
+for (i in 1:(5*22)){
+  results.i <- results.aic[,i]
+  p.i <- results.i$p
+  q.i <- results.i$q
+  aic.i <- results.i$aic
+  
+  aic.data[p.i,q.i]<- aic.i
+}
+
+save(aic.data, file="aic.data.Rdata")
+
+```
+
+```{r}
+load("aic.data.Rdata")
+```
+
+
+
+
