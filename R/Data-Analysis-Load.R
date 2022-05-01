@@ -52,8 +52,7 @@ acf.data.plot <- ggplot(mapping=aes(x=acf.data$lag)) +
 lag.365.plot <- ggplot(mapping=aes(x=y.full[1:(n.full-365)],y=y.full[366:n.full]))+
   geom_point() +
   xlab("365 Day Lag Temp")+
-  ylab("Temp") +
-  labs(title="365 Day Lag Plot")
+  ylab("Temp") 
 
 
 # trend
