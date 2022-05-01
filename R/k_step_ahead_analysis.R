@@ -14,21 +14,9 @@ lm.fit<-lm(TOBS~sin(2*pi*omega) +
 # regression residuals
 resid <- lm.fit$residuals
 
-# plot of residuals looks stationary
-resid.plot <- data.90.percent %>% 
-  ggplot(mapping=aes(x=DATE,y=resid))+
-  geom_line()+
-  xlab("Date")+
-  ylab("Residuals")
-
-# level tests since data has a trend
-# results in zero differencing so residuals from sinusoidal regression stationary
-
-ndiffs(resid, alpha = 0.05, test = "adf", type = "level")
-ndiffs(resid, alpha = 0.05, test = "pp", type = "level")
 
 # max p and q terms and n subsets
-pmax <- 20
+pmax <- 16
 qmax <- 5
 nsubset <- 10
 
@@ -49,7 +37,7 @@ for (i in 1:nsubset) {
   data.train <- data.subset[1:360]
   data.test <- data.subset[-(1:360)]
   
-  for (p in 0:10) {
+  for (p in 0:pmax) {
     
     for (q in 0:qmax) {
       

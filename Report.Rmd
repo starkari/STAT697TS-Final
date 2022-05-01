@@ -3,9 +3,12 @@ title: \vspace{-0.75cm} \begin{normalsize} Analysis of the Predictability of Wea
 author:  \begin{normalsize} Ariane Stark \end{normalsize}
 output: pdf_document
 header-includes:
+  \usepackage{booktabs}
   \usepackage{setspace}
   \usepackage{float}
   \usepackage{array}
+  \setlength{\parindent}{1em}
+  \setlength{\parskip}{0em}
 fontsize: 12pt
 geometry: margin=1in
 ---
@@ -16,57 +19,140 @@ source("R/Data-Analysis-Load.R")
 
 \doublespacing
 
-Temperature is determined by a myriad of factors. This paper seeks to analyze how useful historical weather data is in predicting. Specifically the analysis will focus on the weather in Amherst, Massachusetts from January 1, 2010 to December, 31 2021 for a total of `r nrow(data)` observations. The data has a seasonal trend (Figure 1a) with prior observations being heavily correlated with each other seen by looking at the sample autocorrelations (Figure 1b). 
+<!-- Introduction -->
 
-```{r echo=FALSE, fig.height=3, fig.cap="Figure 1"}
+Temperature is determined by a myriad of factors. This paper seeks to analyze how useful historical weather data is in predicting. Specifically the analysis will focus on the weather in Amherst, Massachusetts from January 1, 2010 to December, 31 2021 for a total of `r nrow(data)` observations. This is a subset of the raw data that started on January 1, 2000 and has been reduced due to missing data instances that all occurred before 2010. The data has a seasonal trend (Figure 1a) with prior observations being heavily correlated with each other seen by looking at the sample auto correlations (Figure 1b). To be able to asses predictive accuracy model fitting and selection were done on the first 90% of the data set. These are the dates from January 1, 2010 to October 18, 2020.
+
+```{r echo=FALSE, fig.height=3, fig.cap="Data and Autocorrelation"}
 cowplot::plot_grid(data.plot,acf.data.plot,nrow=1,labels = "auto",
                    rel_widths = c(4,3))
 ```
 
 
+<!-- ARIMA Model Selection -->
+
+In order to begin the process of fitting and ARIMA model to my data I had to address stationarity. The data without any transformation was not stationary as the mean was time dependent. Due to the patterns seen in the data (Figure 1a) and the 365 day lag values being correlated (Figure 2) a sinusoidal trend that accounted for when a date fell within a calendar year was a good trend to consider to address the non-stationarity of the data (Eq. 1). 
+\begin{equation}
+\texttt{Temp.}=X\underline{\beta}; X=[ \underline{1}, \cos(2\pi\omega),\sin(2\pi\omega) ]; \omega=\texttt{day in year}/\texttt{num.days in year} 
+\end{equation}
+
+To test that this was stationary I used the more general Phillips-Perron level test that the residuals from the trend was stationary which the test with $\alpha=0.05$ agreed with. Note a level test was used as a trend had already been accounted for.
+
+```{r echo=FALSE, fig.height=2.5, fig.cap="365 Day Lag Plot"}
+lag.365.plot
+```
+
+
+The simpler AR(p) and MA(q) models for deviations from an overall level and day of year ratio means $y_t-\mu -\beta_1\cos(2\pi\omega)-\beta_2\sin(2\pi\omega)$ where $\omega=\texttt{day in year}/\texttt{num. days in year}$ were considered first. Based on the sample autocorrelations and sample partial autocorrelations a MA(q=`r max.rej.acf.resid`) model and AR(p=`r max.rej.pacf.resid`) model would be selected respectively. 
+
+The AR(p) and MA(q) models alone for modelling the deviation from a level and the sinusoidal terms resulted in extremely high terms. Instead focus turned to ARIMA(p,0,q ) models for deviations from an overall level and day of year ratio means. Selection of p and q was done via k-step ahead analysis, as k-step ahead (k=30) model selection is ideal when the goal is forecast accuracy. The `r n.90` entries in the data frame with 90% of the data got broken up into 10 consecutive sets of 390 observations starting from the first entry. The last 30 observations of the 390 were withheld and were forecasted based on the model fit to the first 360 in that set. The values considered for p ranged from 0 to 16 and for q from 0 to 5. Larger values of p and q resulted in errors. The model with lowest average mean squared error (MSE) over all 10 test sets was ARIMA(4,0,2).
+
+
+ <!-- ARIMA Conclusion -->
+ 
+Using the parameter fit to the ARIMA(4,0,2) model predictions were made for $y_t-\mu -\beta_1\cos(2\pi\omega)-\beta_2\sin(2\pi\omega)$ for $t=$ `r n.90+1` $,\cdots,$ `r n.full`, the 10% of observation in the initial data frame that were withheld. Inspection of this forecast (Figure 3) does not look great but this is predicting a long time interval (`r n.full-n.90` days). This forecast had a MSE of `r round(mean(as.vector((predict.last.10.percent$pred-y.full[n.full-n.90:n.full])^2)),2)` a mean absolute error of `r round(mean(as.vector(abs(predict.last.10.percent$pred-y.full[n.full-n.90:n.full]))),2)` and a 95% prediction interval coverage of `r round(PI_cov_10_percent_prediction_final,2)`%. The values for point prediction accuracy are mediocre relative to the unit being measured (temperature). A temperature prediction that is on average off by `r round(mean(as.vector(abs(predict.last.10.percent$pred-y.full[n.full-n.90:n.full]))),2)` degrees is not great. However, we would expect a 95% prediction interval coverage that is close to 95% which we do get but this is because our confidence intervals are wide on average covering a `r round(mean(predict.last.10.percent$se*(qnorm(.975)-qnorm(.025))),2)` degree range.
+ 
+```{r echo=FALSE, fig.height=2.5, fig.cap="ARIMA Forecast of Withheld 10%"}
+
+data[(n.90+1):n.full,] %>% 
+  ggplot(aes(x=DATE,y=TOBS)) +
+  geom_line(aes())+
+  geom_line(aes(y=predict.last.10.percent$pred, linetype="prediction"),
+            color="blue") +
+  geom_line(aes(y=predict.last.10.percent$pred +
+                  qnorm(0.025)*predict.last.10.percent$se,
+                linetype="Confidence Interval"),color="blue") +
+  geom_line(aes(y=predict.last.10.percent$pred +
+                  qnorm(0.975)*predict.last.10.percent$se,
+                linetype="Confidence Interval"),color="blue") +
+  scale_linetype_manual(values=c("dashed","solid"),name=NULL,
+                        labels=c("Confidence\n Interval","Forecast"))+
+  xlab("Date")+
+  ylab("Temperature")
+```
+ 
+
+To asses the model's accuracy over shorter time scales the first `r n.full-n.90-30` days in the last 10% were looked at and on each day forecasts were made for 1, 7, 14, and 30 days in the future. The two point forecast accuracy metrics (MSE and MAE) were reported as were the confidence intervals obtained by taking the 2.5% and 97.5% sample quantiles of the metrics. Overall when predicting smaller horizons the model had better performance (Table 1).
+ 
+```{r include=FALSE}
+r1 <- as.vector(c(round(as.numeric(prediction_arima_means[1,2]),2),
+        paste0("(",round(as.numeric(prediction_arima_lb[1,2]),2),", ",round(as.numeric(prediction_arima_ub[1,2]),2),")"),
+        round(as.numeric(prediction_arima_means[1,3]),2),
+        paste0("(",round(as.numeric(prediction_arima_lb[1,3]),2),", ",round(as.numeric(prediction_arima_ub[1,3]),2),")")))
+
+r2 <- as.vector(c(round(as.numeric(prediction_arima_means[2,2]),2),
+        paste0("(",round(as.numeric(prediction_arima_lb[2,2]),2),", ",round(as.numeric(prediction_arima_ub[2,2]),2),")"),
+        round(as.numeric(prediction_arima_means[2,3]),2),
+        paste0("(",round(as.numeric(prediction_arima_lb[2,3]),2),", ",round(as.numeric(prediction_arima_ub[2,3]),2),")")))
+
+r3 <- as.vector(c(round(as.numeric(prediction_arima_means[3,2]),2),
+        paste0("(",round(as.numeric(prediction_arima_lb[3,2]),2),", ",round(as.numeric(prediction_arima_ub[3,2]),2),")"),
+        round(as.numeric(prediction_arima_means[3,3]),2),
+        paste0("(",round(as.numeric(prediction_arima_lb[3,3]),2),", ",round(as.numeric(prediction_arima_ub[3,3]),2),")"))
+)
+
+r4 <- as.vector(c(round(as.numeric(prediction_arima_means[4,2]),2),
+        paste0("(",round(as.numeric(prediction_arima_lb[4,2]),2),", ",round(as.numeric(prediction_arima_ub[4,2]),2),")"),
+        round(as.numeric(prediction_arima_means[4,3]),2),
+        paste0("(",round(as.numeric(prediction_arima_lb[4,3]),2),", ",round(as.numeric(prediction_arima_ub[4,3]),2),")")))
+
+tab1 <- matrix(cbind(c(r1,r2,r3,r4)),ncol=4,byrow = TRUE)
+
+```
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+   & \multicolumn{2}{c}{MSE} & \multicolumn{2}{c}{MAE} \\ \midrule
+Horizon & Value   & CI  & Value   & CI  \\ \cmidrule(l){2-5} 
+1  & `r tab1[1,1]`   & `r tab1[1,2]`   & `r tab1[1,3]`   & `r tab1[1,4]`  \\
+7  & `r tab1[2,1]`   & `r tab1[2,2]`   & `r tab1[2,3]`   & `r tab1[2,4]`   \\
+14 & `r tab1[3,1]`   & `r tab1[3,2]`   & `r tab1[3,3]`   & `r tab1[3,4]`   \\
+30 & `r tab1[4,1]`   & `r tab1[4,2]`   & `r tab1[4,3]`   & `r tab1[4,4]`   \\
+Full Prediction & `r round(mean(as.vector((predict.last.10.percent$pred-y.full[n.full-n.90:n.full])^2)),2)`           &        & `r round(mean(as.vector(abs(predict.last.10.percent$pred-y.full[n.full-n.90:n.full]))),2)`           &        \\ \bottomrule
+\end{tabular}
+\caption{Summary of Point Forecast Accuracy By Horizon}
+\label{tab:my-table}
+\end{table}
+ 
+ <!-- State-Space Fit -->
+ 
+Secondary analysis was done on the data frame to predict the temperature using a State-Space model. Initial analysis was done to determine which of three potential state-space model variations was best. The variations considered were the model with no covariates, the model with covariates in the state equation, and the model with covariates in the observation equation. The covariates added in were month indicators of the date. Ideally the sinusoidal trend would have been added in for analysis but that was not compatible with the MARSS package being used for State-Space analysis. Selection between these three methods was done via k-step ahead analysis, as k-step ahead (k=30) model selection is ideal when the goal is forecast accuracy and is identical to the process done for ARIMA model selection. The `r n.90` entries in the training set (first 90%) got broken up into 10 consecutive sets of 390 observations starting from the first entry. The last 30 observations of the 390 were withheld and were forecasted based on the model fit to the first 360 in that set. The model selected was for adding covariates into the observation equation (Eq. 2).
+ 
+\begin{align}
+\begin{array}{c}
+y_t=ax_t+\underline{Z}_t^T\gamma +vt \\
+x_t=\phi x_{t-1}+w_t \\
+v_t\sim_{\texttt{iid}} N(0,\sigma^2_v); w_t\sim_{\texttt{iid}} N(0,\sigma^2_w); x_1=\mu
+\end{array}
+\end{align}
+ 
+ 
+ 
+ <!-- State-Space Conclusion -->
 
 
 
 
+```{r echo=FALSE, fig.height=2.5, fig.cap="State-Space Forecast of Withheld 10%"}
+plot.state.space.predictions
+```
+
+Using the state space model with month indicators in the observation equation,  predictions were made for the withheld 10% of observations. Inspection of this forecast (Figure 4) looks poor. This forecast had a MSE of `r round(mse.state.space, 2)` a mean absolute error of `r round(mae.state.space,2)` and a 95% prediction interval coverage of `r round(pic_state_space,2)`%. The values for point prediction accuracy are extremely poor given the unit being measured is temperature. A temperature prediction that is on average off by `r round(mae.state.space,2)` degrees is horrible. However, we would expect a 95% prediction interval coverage that is close to 95% which we do get but this is because our confidence intervals are extremely wide on average covering a `r round(mean(full_state_space_predictions_se*(qnorm(.975)-qnorm(.025))),2)` degree range which covers the entire range of likely temperature. The prediction for December 31, 2021 (the last data entry in the set) has a lower bound of `r round(mean(full_state_space_predictions+full_state_space_predictions_se[n.full-n.90]*(qnorm(.025))),2)` and an upper bound of `r round(mean(full_state_space_predictions+full_state_space_predictions_se[n.full-n.90]*(qnorm(.975))),2)` degrees Fahrenheit which are both extreme and potentially implausible temperatures.
+
+
+Considering the two models analyzed, ARIMA and State-Space, I would conclude that the ARIMA model works better for this data set and would predict a more accurate temperature than a state space mode. While a temperature prediction that is on average off by `r round(mean(as.vector(abs(predict.last.10.percent$pred-y.full[n.full-n.90:n.full]))),2)` degrees is not great it far exceed the average error of the state space model of `r round(mae.state.space,2)` degrees. Moreover, short term predictions for the ARIMA model were only off by approximately 6 or 7 degrees (Table 1). Moreover, visual inspection of the predictions (Figure 3 and 4) have the predictions for the state-space model lining up better with the truth than the state space model. In conclusion, past temperature and indicator of date in year makes decent predictions of future weather temperature.
 
 
 
+\newpage
 
+### Refrences
 
+- Data was acquired from the National Centers for Environmental Information at the National Center for Oceanic and Atmospheric Administration and queried from ["here"](https://www.ncdc.noaa.gov/cdo-web/search?datasetid=GHCND)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- Information about the Amherst, Massachusetts station can be found ["here"](https://www.ncdc.noaa.gov/cdo-web/datasets/GHCND/stations/GHCND:USC00190120/detail)
 
 
 
